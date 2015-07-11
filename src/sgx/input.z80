@@ -1,0 +1,150 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+;
+; *** SGX Input ***
+;
+SGX_KEY_ENTER equ 13
+SGX_KEY_SPACE equ 32
+
+SGX_KEY_A equ 65
+SGX_KEY_B equ 66
+SGX_KEY_C equ 67
+SGX_KEY_D equ 68
+SGX_KEY_E equ 69
+SGX_KEY_F equ 70
+SGX_KEY_G equ 71
+SGX_KEY_H equ 72
+SGX_KEY_I equ 73
+SGX_KEY_J equ 74
+SGX_KEY_K equ 75
+SGX_KEY_L equ 76
+SGX_KEY_M equ 77
+SGX_KEY_N equ 78
+SGX_KEY_O equ 79
+SGX_KEY_P equ 80
+SGX_KEY_Q equ 81
+SGX_KEY_R equ 82
+SGX_KEY_S equ 83
+SGX_KEY_T equ 84
+SGX_KEY_U equ 85
+SGX_KEY_V equ 86
+SGX_KEY_W equ 87
+SGX_KEY_X equ 88
+SGX_KEY_Y equ 89
+SGX_KEY_Z equ 90
+
+SGX_KEY_0 equ 48
+SGX_KEY_1 equ 49
+SGX_KEY_2 equ 50
+SGX_KEY_3 equ 51
+SGX_KEY_4 equ 52
+SGX_KEY_5 equ 53
+SGX_KEY_6 equ 54
+SGX_KEY_7 equ 55
+SGX_KEY_8 equ 56
+SGX_KEY_9 equ 57
+
+
+CSGXInputManager_waitForSpaceKey:
+  ld bc, 32766
+CSGXInputManager_waitForSpaceKeyLoop:
+  in  a, (c)
+  bit 0, a
+  jr nz, CSGXInputManager_waitForSpaceKeyLoop
+  ret
+
+; On input, A=key to check
+; On output, Z flag=1 if key is press
+CSGXInputManager_isKeyboardKeyPressed:
+  ; Check for edge cases
+  cp  SGX_KEY_ENTER
+  jr nz, CSGXInputManager_isKeyboardKeyPressed_not_enter
+  ld bc, 49150
+  in a, (c)
+  and 1
+  ret
+
+CSGXInputManager_isKeyboardKeyPressed_not_enter:
+  cp  SGX_KEY_SPACE
+  jr  nz, CSGXInputManager_isKeyboardKeyPressed_not_space
+  ld  bc, 32766
+  in  a, (c)
+  and 1
+  ret
+
+CSGXInputManager_isKeyboardKeyPressed_not_space:
+  ; Find remap data ptr, and get into hl
+  ld bc, CSGXInputManager_keyremapper  - 48*4
+  ld h, 0
+  ld l, a
+  add hl, hl    ; *2 (skip the port addr)
+  add hl, hl    ; *2 (skip the mask)
+  add hl, bc
+
+  ; Get port into BC   (note the order)
+  ld c, (hl)
+  inc hl
+  ld b, (hl)
+  inc hl
+
+  in a, (c)  ; key state
+  ld b, (hl) ; mask
+
+  and b
+  ret
+
+
+CSGXInputManager_keyremapper:
+  ; Each pair holds the port and bitmask respectively
+  defw  61438, 1    ;0
+  defw  63486, 1    ;1
+  defw  63486, 2    ;2
+  defw  63486, 4    ;3
+  defw  63486, 8    ;4
+  defw  63486, 16   ;5
+  defw  61438, 16   ;6
+  defw  61438, 8    ;7
+  defw  61438, 4    ;8
+  defw  61438, 2    ;9
+  ;
+  defw 0,0 ; asc 58
+  defw 0,0 ; asc 59
+  defw 0,0 ; asc 60
+  defw 0,0 ; asc 61
+  defw 0,0 ; asc 62
+  defw 0,0 ; asc 63
+  defw 0,0 ; asc 64
+  ;
+  defw  65022, 1    ;A
+  defw  32766, 16   ;B
+  defw  65278, 8    ;C
+  defw  65022, 4    ;D
+  defw  64510, 4    ;E
+  defw  65022, 8    ;F
+  defw  65022, 16   ;G
+  defw  49150, 16   ;H
+  defw  57342, 4    ;I
+  defw  49150, 8    ;J
+  defw  49150, 4    ;K
+  defw  49150, 2    ;L
+  defw  32766, 4    ;M
+  defw  32766, 8    ;N
+  defw  57342, 2    ;O
+  defw  57342, 1    ;P
+  defw  64510, 1    ;Q
+  defw  64510, 8    ;R
+  defw  65022, 2    ;S
+  defw  64510, 16   ;T
+  defw  57342, 8    ;U
+  defw  65278, 16   ;V
+  defw  64510, 2    ;W
+  defw  65278, 4    ;X
+  defw  57342, 16   ;Y
+  defw  65278, 2    ;Z
+

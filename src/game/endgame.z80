@@ -1,0 +1,71 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+game_over_win:
+
+  ld a, sgxColorRGBA_RED
+  call sgxDrawSurface_setBorderColor
+
+  ld hl, DFILE_DATA_TROPHY
+  call sgxDrawSurface_drawImage
+
+  ld hl, TUNE_GAME_WIN
+  call CSGXAudioEngine_playMusic
+
+  call CSGXAudioEngine_playSoundSweep
+  call CSGXAudioEngine_playSoundSweepDown
+  call CSGXAudioEngine_playSoundSweep
+  call CSGXAudioEngine_playSoundSweep
+
+  jp game_over_common
+
+
+game_over_lose:
+
+  call player_draw
+  ld a, DATA_GRAPHIC_CROSS
+  call player_change_sprite
+  call player_draw
+
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setBorderColor
+
+  ld hl, TUNE_DEATH
+  call CSGXAudioEngine_playMusic
+
+  ld hl, DFILE_DATA_SKELETON
+  call sgxDrawSurface_drawImage
+
+  ld a, sgxColorRGBA_YELLOW
+  call sgxDrawSurface_setFontInkColor
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setFontPaperColor
+
+  ld de, txt_YouveDied
+  ld hl, $1001
+  call sgxDrawSurface_drawTextCentre
+
+
+  ld de, txt_YouScored
+  ld hl, $0413
+  call sgxDrawSurface_drawText
+
+  ld de, (GAME_SCORE)
+  ld hl, $1013
+  call sgxDrawSurface_drawNumber
+
+
+game_over_common:
+  ld de, txt_RestartGame
+  ld hl, $1015
+  call sgxDrawSurface_drawTextCentre
+
+  call CSGXInputManager_waitForSpaceKey
+  call game_initialize
+  call game_start
+  ret

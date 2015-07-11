@@ -1,0 +1,64 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+; Game data
+; Sprite render data - always in a fixed order, like a struct
+DATA_OFFSET_LEVEL     equ 0
+DATA_OFFSET_XPOS      equ 1
+DATA_OFFSET_YPOS      equ 2
+DATA_OFFSET_IMAGE     equ 3    ; First image within sprite list
+DATA_OFFSET_ATTR      equ 4    ; F B PPP III
+DATA_OFFSET_FRAME     equ 5    ; of animation. Actual image idx is IMAGE+FRAME
+DATA_OFFSET_USER      equ 6
+DATA_OFFSET_USER1     equ 6
+DATA_OFFSET_USER2     equ 7
+DATA_OFFSET_USER3     equ 8     ; for player, the ID of the inventory item
+DATA_OFFSET_COLLISION equ 9
+
+; Level, xpos, ypos, image, ink, paper
+;   pCallbackCollision
+DATA_GAME_OBJECTS
+DATA_PLAYER         defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_null
+DATA_KEY_YELLOW     defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_collect
+DATA_CHALICE        defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_collect
+DATA_SWORD          defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_collect
+DATA_KEY_BLACK      defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_collect
+DATA_DRAGON1        defb 0, 0, 0, 0, 0, 0, 0,0, 0    ;u1=alive/dead  u2=vertical/horizontal
+  defw collision_fight_dragon
+DATA_DRAGON2        defb 0, 0, 0, 0, 0, 0, 0,1, 0
+  defw collision_fight_dragon
+DATA_PORTCULLIS1    defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_portcullis1
+DATA_PORTCULLIS2    defb 0, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_portcullis2
+DATA_INVENTORY      defb 255, 0, 0, 0, 0, 0, 0,0, 0
+  defw collision_null
+
+DATA_GAME_OBJECT_END
+
+GAME_OBJECT_SIZE      equ DATA_KEY_YELLOW-DATA_PLAYER
+GAME_OBJECT_COUNT     equ (DATA_GAME_OBJECT_END-DATA_PLAYER)/GAME_OBJECT_SIZE
+
+DRAGON_MOVE_LEFT  equ %00
+DRAGON_MOVE_RIGHT equ %01
+DRAGON_MOVE_UP    equ %10
+DRAGON_MOVE_DOWN  equ %11
+
+GAME_SCORE        defw  0
+GAME_AIR_LEFT     defw  0
+GAME_PLAYER_DEAD  defb  0
+GAME_PLAYER_WON   defb  0
+
+; References to current level, as a data ptr, and index
+LEVEL_LOCATION defw  0
+LEVEL_INDEX    defb  0

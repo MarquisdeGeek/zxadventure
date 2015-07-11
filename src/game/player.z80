@@ -1,0 +1,317 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+
+player_change_sprite:
+
+  ; change sprite image
+  ld (ix+DATA_OFFSET_IMAGE), a
+
+  ; We know there's only 2 frames, so flip between 0 & 1
+  ld a, (ix+DATA_OFFSET_FRAME)
+  xor 1
+  ld (ix+DATA_OFFSET_FRAME), a
+
+  ret
+
+
+  ;
+  ; Player movement routines
+  ; ix = player object ptr
+  ;
+; amend direction/gfx
+; check if move is valid
+player_move_left:
+
+  ; Have we reached the edge of the screen
+  ld a,(ix+DATA_OFFSET_XPOS)
+  or 0  ; test for 0
+  jp  z, player_exit_west
+
+  ; Check to see if we've reached the bound of a tile. If so, we
+  ; need to check if. If not, we trust the previous call to stop
+  ; us being inside a wall, so we don't need to test it.
+  and 7                       ; this is triggered on a=8,a=16, etc
+  jr  nz, player_move_left_ok
+
+  ld bc, $f000
+  ld (GL_COLLISION_OFFSET), bc
+
+  ; Check for collisions with the tile on the left
+  ld bc, -1
+  call check_map_collision_horizontal
+  jp nz, game_loop_check_keys_yaxis        ; there is a collision
+
+player_move_left_ok:
+  ; Erase the previous instance
+  call player_draw
+  dec (ix+DATA_OFFSET_XPOS)
+
+  ld a, DATA_GRAPHIC_PLAYER_LEFT
+  call player_change_sprite
+
+  call player_draw
+  jp game_loop_check_keys_yaxis
+
+
+player_move_right:
+  ; check for edge
+  ld a,(ix+DATA_OFFSET_XPOS)
+  cp 31*8
+  jp  z, player_exit_east
+
+  and 7                       ; this is triggered on a=8,a=16, etc
+  jr  nz, player_move_right_ok
+
+  ld bc, $1000
+  ld (GL_COLLISION_OFFSET), bc
+
+  ; Check for collisions with the tile on the left
+  ld bc, 1
+  call check_map_collision_horizontal
+  jp nz, game_loop_check_keys_yaxis        ; there is a collision
+
+player_move_right_ok:
+  call player_draw
+
+  ld a, DATA_GRAPHIC_PLAYER_RIGHT
+  call player_change_sprite
+
+  inc (ix+DATA_OFFSET_XPOS)
+  call player_draw
+  jp game_loop_check_keys_yaxis
+
+
+player_move_up:
+  ; check for edge
+  ld a,(ix+DATA_OFFSET_YPOS)
+  or a
+  jr  z, player_exit_north
+
+  and 7                       ; this is triggered on a=8,a=16, etc
+  jr  nz, player_move_up_ok
+
+  ld bc, $00f0
+  ld (GL_COLLISION_OFFSET), bc
+  ld bc, -32
+  call check_map_collision_vertical   
+  jp nz, game_loop_check_collisions        ; there is a collision
+
+player_move_up_ok:
+  call player_draw
+
+  ld a, DATA_GRAPHIC_PLAYER_UP
+  call player_change_sprite
+
+  dec (ix+DATA_OFFSET_YPOS)
+  call player_draw
+  jp game_loop_check_collisions
+
+
+player_move_down:
+  ; check for edge
+  ld a,(ix+DATA_OFFSET_YPOS)
+  cp 8*11      ;ypos is the top of the sprite, so as soon as it breaches the bottom
+  jr  z, player_exit_south
+
+  and 7                       ; this is triggered on a=8,a=16, etc
+  jr  nz, player_move_down_ok
+
+  ld bc, $0010
+  ld (GL_COLLISION_OFFSET), bc
+
+  ld bc, 32
+  call check_map_collision_vertical
+  jp nz, game_loop_check_collisions        ; there is a collision
+
+player_move_down_ok:
+  call player_draw
+
+  ld a, DATA_GRAPHIC_PLAYER_DOWN
+  call player_change_sprite
+
+  inc (ix+DATA_OFFSET_YPOS)
+  call player_draw
+  jp game_loop_check_collisions
+
+player_exit_west:
+  ld (ix+DATA_OFFSET_XPOS),31*8
+  ld bc, 3
+  jr    player_switch_level
+
+player_exit_east:
+  ld (ix+DATA_OFFSET_XPOS), 0
+  ld bc, 2
+  jr    player_switch_level
+
+player_exit_north:
+  ld (ix+DATA_OFFSET_YPOS),8*11
+  ld bc, 0
+  jr    player_switch_level
+
+player_exit_south:
+  ld (ix+DATA_OFFSET_YPOS),0
+  ld bc, 1
+
+; IN : BC should be the direction of the new level (0=north,1=south,2=east,3=west)
+player_switch_level:
+  ld hl,(LEVEL_LOCATION)
+  add hl,bc
+  ld a,(hl)          ; get new level, according to the direction we move (bc)
+  call init_level
+
+  ; If we move inside the yellow castle, we win
+  ld a,(LEVEL_INDEX)
+  cp 11
+  jr nz, player_switch_level_not_in_castle
+  ld de, DATA_CHALICE
+  call player_own_item
+  jr nz, player_switch_level_not_in_castle
+  
+  ; FIN!!
+  ld a,1
+  ld hl,GAME_PLAYER_WON
+  ld (hl),a
+  jp game_loop_check_collisions
+
+
+player_switch_level_not_in_castle:
+
+  jp game_start
+
+player_draw_hud:
+
+  push ix
+  push iy
+
+  ld ix,DATA_PLAYER
+  ld a, (ix+DATA_OFFSET_USER3)    ; image of the item
+  or a
+  jr z, nothing_in_inventory      ; this works only because item 0 is the player, and the player can't have himself in the inventory
+
+  ld ix,DATA_INVENTORY
+  ld (ix+DATA_OFFSET_XPOS), 13*8
+  ld (ix+DATA_OFFSET_YPOS), 15*8
+  ld (ix+DATA_OFFSET_ATTR), sgxColorRGBA_WHITE + sgxColorRGBA_BLUE*8        ; flash
+
+  ld (ix+DATA_OFFSET_IMAGE), a
+  ld (ix+DATA_OFFSET_FRAME), 0
+
+  call sgxDrawSurface_ClearRect
+  call sgxDrawSurface_FillRect
+
+nothing_in_inventory:
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setFontPaperColor
+
+
+  ; Inventory
+  ld a, sgxColorRGBA_YELLOW
+  call sgxDrawSurface_setFontInkColor
+
+  ld hl, $010f
+  ld de, txt_Inventory
+  call sgxDrawSurface_drawText
+
+
+  ; Score
+  ld a, sgxColorRGBA_CYAN
+  call sgxDrawSurface_setFontInkColor
+
+  ld hl, $0111
+  ld de, txt_Score
+  call sgxDrawSurface_drawText
+
+  ld de, (GAME_SCORE)
+  ld hl, $0d11
+  call sgxDrawSurface_drawNumber
+
+
+  ; Air
+  ld a, sgxColorRGBA_WHITE
+  call sgxDrawSurface_setFontInkColor
+
+  ld hl, $0113
+  ld de, txt_Air
+  call sgxDrawSurface_drawText
+
+  call player_draw_airleft
+
+  pop iy
+  pop ix
+
+  ret
+
+player_draw_airleft:
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setFontPaperColor
+  ld a, sgxColorRGBA_WHITE
+  call sgxDrawSurface_setFontInkColor
+
+  ld hl, $0d13
+  ld de, txt_BlankTimer
+  call sgxDrawSurface_drawText
+
+  ; Only show MSB of timer
+  ld de, (GAME_AIR_LEFT)
+  ld e, d
+  ld d, 0
+  ld hl, $0d13  ;x=1 y=$13
+  call sgxDrawSurface_drawNumber
+  ret
+
+player_draw:
+  call sgxDrawSurface_LevelFillRect
+  ret
+
+; IN : IY ptr to game object
+; IN : IX ptr to player object (or other object to compare with collision)
+; Use the basic logic of if |dx| < 8 && |dy| < 8
+player_check_collision_with_object:
+
+  ; Get the object position & level data
+  ld d, (IY+DATA_OFFSET_XPOS)
+  ld e, (IY+DATA_OFFSET_YPOS)
+  ld a, (IY+DATA_OFFSET_LEVEL)
+
+  ; Are they on the same level? If not, return. No point in checking further.
+  cp (IX+DATA_OFFSET_LEVEL)
+  jr z, compare_x_positions
+  ld a,0
+  ret
+
+compare_x_positions:
+  ld a, d
+  sub (IX+DATA_OFFSET_XPOS)
+  call sgxAbs
+
+  cp 8
+  jr c, compare_y_positions
+  ld a,0
+  ret
+
+compare_y_positions:
+  ld a, e
+  sub (IX+DATA_OFFSET_YPOS)
+  call sgxAbs
+
+  cp 8
+  jr nc, comparison_done
+  ld a, 1
+  ret
+
+comparison_done:
+  ld a, 0
+  ret
+
+
+
+
+collision_null:
+  ; do nothing, and check the next object check
+  jp game_loop_check_object_next

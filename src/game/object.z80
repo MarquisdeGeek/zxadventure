@@ -1,0 +1,127 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+
+; IY = ptr to object being collected
+collision_collect:
+  ld a, 3
+  call game_add_score
+  call player_draw_hud
+
+  push iy
+  ld   hl, TUNE_COLLECT_OBJECT
+  call CSGXAudioEngine_playMusic
+  pop iy
+
+  ; drop old item, if present
+  ld ix, DATA_PLAYER
+  xor a
+  cp (ix+DATA_OFFSET_USER)      ; this only checks the MSB, which is fine because our data isn't in the 1st page of memory
+  jr z, collision_collect_take_object
+
+collision_collect_drop_object
+
+  ; get the dropped object's data
+  ld a, (ix+DATA_OFFSET_LEVEL)
+  ld h, (ix+DATA_OFFSET_XPOS)
+  ld l, (ix+DATA_OFFSET_YPOS)
+
+  ; Which object is the player dropping?
+  ld d, (ix+DATA_OFFSET_USER+0)
+  ld e, (ix+DATA_OFFSET_USER+1)
+  push iy  ; the object ptr to be picked up
+  push de
+  pop iy   ; the object ptr of what's dropped
+
+  ; Write the object to the players' level and X,Y position
+  ld (iy+DATA_OFFSET_LEVEL), a
+  
+  ; Move the H (xpos) and L (ypos) by the collision offset, so we don't
+  ; immediately collide with the thing we just dropped
+  ld bc, (GL_COLLISION_OFFSET) 
+  add hl, bc
+
+  ; stop it being placed at the edge of the screen
+  ; TODO - BUGWARN - it could still be placed inside the castle
+  ld a, h
+  cp 8        ; left edge
+  jr nc, obj_edge_not_near_left
+  ld bc, $2000
+  add hl, bc
+  jr collision_collect_dew_drop
+
+obj_edge_not_near_left:
+  cp 240     ; right edge
+  jr c, obj_edge_not_near_right
+  ld bc, $2000
+  sbc hl, bc
+  jr collision_collect_dew_drop
+
+obj_edge_not_near_right:
+  ld a, l  ; y-axis... top
+  cp 8
+  jr nc, obj_edge_not_near_top
+  ld bc, $0020
+  add hl, bc
+  jr collision_collect_dew_drop
+
+obj_edge_not_near_top:
+  cp 80     ; bottom edge
+  jr c, collision_collect_dew_drop
+  ld bc, $0020
+  sbc hl, bc
+
+
+collision_collect_dew_drop:
+
+  ld (iy+DATA_OFFSET_XPOS), h
+  ld (iy+DATA_OFFSET_YPOS), l
+
+  push iy
+  pop ix
+  call sgxDrawSurface_FillRect
+
+  pop iy    ; the object ptr to be picked up
+
+collision_collect_take_object:
+  ; Remove the player, so the erase can happen without leaving gfx behind
+  ld ix, DATA_PLAYER
+  call        player_draw
+
+  ; 1. re-draw object, thus erasing it
+  push ix
+  push iy
+  pop ix
+  call sgxDrawSurface_ClearRect
+
+
+  ; 2. remove object from levels
+  ; (the player can force it to position if it likes)
+  ld (iy + DATA_OFFSET_LEVEL), -1
+
+  ; 3. add ptr to player inventory
+  push iy
+  pop hl
+  pop ix        ; retrieve player ptr
+  ld (ix+DATA_OFFSET_USER1), h
+  ld (ix+DATA_OFFSET_USER2), l
+
+  ld a, (iy+DATA_OFFSET_IMAGE)
+  add a, (iy+DATA_OFFSET_FRAME)
+  ld (ix+DATA_OFFSET_USER3), a
+
+  
+  ; redraw player, to mirror its removal earlier
+  call player_draw
+  call player_draw_hud
+  jp game_loop_check_object_next
+
+
+tune_collect
+  defb  222, 20,  210, 20,  200, 20,    0
+

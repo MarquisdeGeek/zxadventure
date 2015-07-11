@@ -1,0 +1,133 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+game_initialize:
+  xor a
+  ld hl,GAME_PLAYER_DEAD
+  ld (hl), a
+
+  ld hl,GAME_PLAYER_WON
+  ld (hl), a
+
+  ld hl,GAME_SCORE
+  ld (hl), a
+  inc hl
+  ld (hl), a
+
+  ld hl,GAME_AIR_LEFT
+  ld (hl), 0          ; LSB (never shown)
+  inc hl
+  ld (hl), 100        ; MSB
+
+  ; DATA_OFFSET_ATTR : F B PPP III
+
+  ld ix,DATA_KEY_YELLOW
+  ld (ix+DATA_OFFSET_LEVEL),10
+  ld (ix+DATA_OFFSET_XPOS),6 * 8
+  ld (ix+DATA_OFFSET_YPOS),5 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_CYAN
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_KEY
+  ld (ix+DATA_OFFSET_FRAME),0
+
+  ld ix,DATA_KEY_BLACK
+  ld (ix+DATA_OFFSET_LEVEL),9
+  ld (ix+DATA_OFFSET_XPOS),3 * 8
+  ld (ix+DATA_OFFSET_YPOS),4 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_WHITE
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_KEY
+  ld (ix+DATA_OFFSET_FRAME),0
+
+  ld ix,DATA_SWORD
+  ld (ix+DATA_OFFSET_LEVEL),11
+  ld (ix+DATA_OFFSET_XPOS),6 * 8
+  ld (ix+DATA_OFFSET_YPOS),8 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_RED
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_SWORD
+  ld (ix+DATA_OFFSET_FRAME),0
+
+  ld ix,DATA_CHALICE
+  ld (ix+DATA_OFFSET_LEVEL),12
+  ld (ix+DATA_OFFSET_XPOS),6 * 8
+  ld (ix+DATA_OFFSET_YPOS),5 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_YELLOW
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_CHALICE
+  ld (ix+DATA_OFFSET_FRAME),0
+
+  ld ix,DATA_DRAGON1         ; guarding the key
+  ld (ix+DATA_OFFSET_LEVEL),9
+  ld (ix+DATA_OFFSET_XPOS),4 * 8
+  ld (ix+DATA_OFFSET_YPOS),4 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_MAGENTA
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_DRAGON
+  ld (ix+DATA_OFFSET_FRAME),0
+  ld (ix+DATA_OFFSET_USER1),1     ; isAlive
+  ld (ix+DATA_OFFSET_USER2),DRAGON_MOVE_LEFT   ; because the distance_left=0 (user3) it immediately changes to 'move right'
+  ld (ix+DATA_OFFSET_USER3),0
+
+  ld ix,DATA_DRAGON2              ;  in empty room
+  ld (ix+DATA_OFFSET_LEVEL),8
+  ld (ix+DATA_OFFSET_XPOS),3 * 8
+  ld (ix+DATA_OFFSET_YPOS),3 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_RED
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_DRAGON
+  ld (ix+DATA_OFFSET_FRAME),0
+  ld (ix+DATA_OFFSET_USER1),1     ; isAlive
+  ld (ix+DATA_OFFSET_USER2),DRAGON_MOVE_UP
+  ld (ix+DATA_OFFSET_USER3),0
+
+  ld ix,DATA_PORTCULLIS1
+  ld (ix+DATA_OFFSET_LEVEL),10
+  ld (ix+DATA_OFFSET_XPOS),16 * 8
+  ld (ix+DATA_OFFSET_YPOS),5 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_CYAN
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_PORTCULLIS
+  ld (ix+DATA_OFFSET_FRAME),0
+  ld (ix+DATA_OFFSET_USER),0     ; isOpen
+
+  ld ix,DATA_PORTCULLIS2
+  ld (ix+DATA_OFFSET_LEVEL),0
+  ld (ix+DATA_OFFSET_XPOS),16 * 8
+  ld (ix+DATA_OFFSET_YPOS),5 * 8
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_BLUE
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_PORTCULLIS
+  ld (ix+DATA_OFFSET_FRAME),0
+  ld (ix+DATA_OFFSET_USER),0     ; isOpen
+
+  ; Close the tiles
+  ld a, 0
+  call map_compute_level_offset_in_hl
+  ld (LEVEL_LOCATION), hl
+  ld bc, MAP_PORTCULLIS_BLOCKING_TILE_OFFSET
+  ld a, 3              ; portcullis blocker tile
+  call map_change_tile_at_offset
+
+  ld a, 10
+  call map_compute_level_offset_in_hl
+  ld (LEVEL_LOCATION), hl
+  ld bc, MAP_PORTCULLIS_BLOCKING_TILE_OFFSET
+  ld a, 3              ; portcullis blocker tile
+  call map_change_tile_at_offset
+
+
+  ; Player last, so save re-loading IX
+  ld ix,DATA_PLAYER
+  ld (ix+DATA_OFFSET_LEVEL), 10
+  ld (ix+DATA_OFFSET_XPOS),16 * 8
+  ld (ix+DATA_OFFSET_YPOS),10 * 8
+  ld (ix+DATA_OFFSET_IMAGE), DATA_GRAPHIC_PLAYER_LEFT
+  ld (ix+DATA_OFFSET_FRAME),0
+  ld (ix+DATA_OFFSET_ATTR), (sgxColorRGBA_BLACK*8) + sgxColorRGBA_WHITE
+  ld (ix+DATA_OFFSET_USER1),0     ; used to indicate owned object ptr
+  ld (ix+DATA_OFFSET_USER2),0     ; used to indicate owned object ptr
+  ld (ix+DATA_OFFSET_USER3),0    ; used to indicate owned object
+
+
+  ; Initialize first level
+  ld a,(ix+DATA_OFFSET_LEVEL)
+  call init_level
+  ret

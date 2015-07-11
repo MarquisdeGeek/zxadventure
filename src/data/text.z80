@@ -1,0 +1,22 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+;
+; Language text
+;
+txt_StartGame         defb 'Press space to start', 0
+txt_RestartGame       defb ' Press space to play again ', 0
+txt_YouveDied         defb ' Epic fail! You have died ', 0
+txt_YouveWon          defb ' Congratulations on being awesome! ', 0
+txt_YouScored         defb ' You scored     ', 0
+txt_BlankTimer        defb '    ', 0
+txt_MDG               defb 'MdG', 0
+
+txt_Score             defb 'Score :', 0
+txt_Air               defb 'Air :', 0
+txt_Inventory         defb 'Inventory :', 0

@@ -1,0 +1,46 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+collision_portcullis2:
+  ; Does the player have key?
+  ld de, DATA_KEY_BLACK
+  jr collision_portcullis_common
+
+collision_portcullis1:
+  ; Does the player have key?
+  ld de, DATA_KEY_YELLOW
+
+collision_portcullis_common:
+  call player_own_item
+  jr nz, collision_portcullis_nokey
+
+  ; It opens!
+  xor a
+  cp (iy+DATA_OFFSET_IMAGE)
+  jr z, collision_portcullis_already_open
+
+  ; Replace the image with a null (0) tile
+  ld (iy+DATA_OFFSET_IMAGE), a
+
+  push iy
+  pop ix
+  call sgxDrawSurface_ClearRect
+
+  ; Remove the blocking tile on the map
+  ld bc, MAP_PORTCULLIS_BLOCKING_TILE_OFFSET
+  ld a, 0
+  call map_change_tile_at_offset
+  
+  ;
+  ld   hl, TUNE_OPEN_PORTCULLIS
+  call CSGXAudioEngine_playMusic
+
+collision_portcullis_already_open:
+collision_portcullis_nokey:
+
+  jp game_loop_check_object_next

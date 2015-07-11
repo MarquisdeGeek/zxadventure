@@ -1,0 +1,83 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+org 08000h
+
+beginning:
+  nop                   ; I use this because the disassembler in Zero starts off by one byte
+  jp cold_start
+
+; I'm so used to C++, thus the weird organization here
+INCLUDE sgx/core.z80
+INCLUDE sgx/input.z80
+INCLUDE sgx/graphics.z80
+INCLUDE sgx/audio.z80
+
+INCLUDE data/gamedata.z80
+INCLUDE data/levelmap.z80
+INCLUDE data/loadingscreen.z80
+INCLUDE data/trophy.z80
+INCLUDE data/skeleton.z80
+INCLUDE data/udgs.z80
+INCLUDE data/sprites.z80
+INCLUDE data/text.z80
+INCLUDE data/music.z80
+
+INCLUDE game/endgame.z80
+INCLUDE game/gameloop.z80
+INCLUDE game/levelmap.z80
+INCLUDE game/startup.z80
+INCLUDE game/player.z80
+INCLUDE game/object.z80
+INCLUDE game/dragon.z80
+INCLUDE game/portcullis.z80
+
+cold_start:
+  ; init_system
+  call CSGXCoreEngine_create
+  call CSGXAudioEngine_create
+  call CSGXGraphicsEngine_create
+
+  ; Prepare Title screen
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setBorderColor
+
+  ld hl,DFILE_DATA
+  call sgxDrawSurface_drawImage
+
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setFontPaperColor
+  ld a, sgxColorRGBA_YELLOW
+  call sgxDrawSurface_setFontInkColor
+
+  ld de, txt_StartGame
+  ld hl, $0113  ;x=41 y=$13
+  call sgxDrawSurface_drawText
+
+  ld a, sgxColorRGBA_BLACK
+  call sgxDrawSurface_setFontPaperColor
+  ld a, sgxColorRGBA_WHITE
+  call sgxDrawSurface_setFontInkColor
+
+  ld hl, $1d15
+  ld de, txt_MDG
+  call sgxDrawSurface_drawText
+
+
+  call CSGXAudioEngine_playSoundSweep
+
+  call CSGXInputManager_waitForSpaceKey
+
+  ld hl, TUNE_START_GAME
+  call CSGXAudioEngine_playMusic
+
+  call game_initialize
+  jp game_start
+
+
+end 08000h

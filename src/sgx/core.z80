@@ -1,0 +1,55 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+;
+; SGX Core
+;
+os_ix:    defw 0
+os_iy:    defw 0
+
+SGX_TRUE  equ 1
+SGX_FALSE equ 0
+
+CSGXCoreEngine_create:
+  ; store OS
+  ld (os_ix), ix
+  ld (os_iy), iy
+  ret
+
+CSGXCoreEngine_restoreIXY:
+  ld iy, (os_iy)
+  ; fall through
+
+CSGXCoreEngine_restoreIX:
+  ld ix, (os_ix)
+  ret
+
+CSGXCoreEngine_restoreIY:
+  ld iy, (os_iy)
+  ret
+
+sgxAbs:
+  bit 7,a
+  ret z
+  neg
+  ret
+
+; IN : DE = ptr to string
+; OUT : BC = length
+sgxStrlen:
+   ld bc,-1
+
+sgxStrlen_loop:
+  inc bc
+  ld  a, (de)
+  inc de
+  or  a
+  jr  nz, sgxStrlen_loop
+  
+  ret
+  

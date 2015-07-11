@@ -1,0 +1,27 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+;
+; *** UDG Block Graphics ***
+;
+
+DATA_GRAPHICS_UDGS
+  defb 0,0,0,0,0,0,0,0   ; 0 : null
+  defb 1,1,1,255,16,16,16,255     ; 1 : brick
+
+  defb 255,255,219,219, 60,126,219,153     ; 2 : 147 : portcullis
+  defb 255,%10011001,%10011001,%10011001,%10011001,%10011001,%10011001,%10011001
+  defb 32,32,32,224,32,32,32,224         ; 4 : 148 : Brick  right edge
+  defb 16,16,16,127,16,16,16,127  ; 5 : 149 : ???
+  defb $ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff   ; 6 : 150 : portcullis 2
+  defb $ff, %01111111, %01111111, %00111110, %00011100, 0,0,0  ; 7 : 151 : cloud #1
+  defb $ff, $fe,$7f,$7f, %00111110, %00011100, 0,0  ; 8 : 152 : cloud #2
+  defb %00001000, %00011100, %00101010, %01010101, %01001001, %01000001, %01010101, %01101011  ; 9 : 153 : window arch
+  defb %01001001, %01000001, %01000001, %01000001, %01000001, %01000001, %01000001, %01111111  ;10 : 154 : arch 2
+  defb $ff,$ff,$ff,$ff,$ff,$ff,$ff,$ff  ;11 : 15 : ???
+

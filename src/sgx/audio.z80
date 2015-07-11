@@ -1,0 +1,343 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+;
+; *** SGX Audio ***
+;
+
+CSGXAudioEngine_create:
+  ret
+
+; in: HL = address of tune structure : pitch, duration
+CSGXAudioEngine_playMusic:
+
+  ld ix, CSGXAudioEngine_audio_remapper
+
+  ld a, (hl) ;get note index
+  cp -1
+  ret z
+
+
+  ; ix += a*4 (using bc=a*4)
+  ld  b, 0
+  ld  c, a
+  sla c
+  rl  b
+  sla c
+  rl  b
+
+  add ix, bc
+
+  ; Get the duration from the music buffer
+  inc hl
+  ld  a, (hl)
+  inc hl
+  push hl
+
+  ; Load Spectrum pitch value from table
+  ld h, (ix+3)
+  ld l, (ix+2)
+
+  ; Get genuine pitch from table, as duration
+  ld d, (ix+1)
+  ld e, (ix+0)
+
+  ; Modify duration (de) according to length
+  cp 32
+  jr z, CSGXAudioEngine_playMusic_duration_32
+
+  cp 16
+  jr z, CSGXAudioEngine_playMusic_duration_16
+
+  cp 8
+  jr z, CSGXAudioEngine_playMusic_duration_8
+
+  cp 4
+  jr z, CSGXAudioEngine_playMusic_duration_4
+
+  cp 2
+  jr z, CSGXAudioEngine_playMusic_duration_2
+  
+  jr CSGXAudioEngine_playMusic_duration_1
+
+; de /= 2, for each step
+CSGXAudioEngine_playMusic_duration_32:
+  sra d
+  rr  e
+
+CSGXAudioEngine_playMusic_duration_16:
+  sra d
+  rr  e
+
+CSGXAudioEngine_playMusic_duration_8:
+  sra d
+  rr  e
+
+CSGXAudioEngine_playMusic_duration_4:
+  sra d
+  rr  e
+
+CSGXAudioEngine_playMusic_duration_2:
+  sra d
+  rr  e
+
+CSGXAudioEngine_playMusic_duration_1:
+
+  call 949
+  pop hl
+
+  jp CSGXAudioEngine_playMusic
+
+
+CSGXAudioEngine_playSound:
+; Frequency of G sharp in octave of middle C = 415.30
+; Frequency of G sharp one octave higher = 830.60
+; Duration = 830.6 / 4 = 207.65
+; Pitch = 437500 / 830.6 - 30.125 = 496.6
+
+  ld hl, 497          ; pitch
+  ld de, 208          ; duration
+  call 949            ; ROM beeper routine
+  ret
+
+CSGXAudioEngine_playSoundSweep
+  push hl
+  push bc
+  push de
+
+  ld hl, 500          ; starting pitch.
+  ld b, 250           ; length of pitch bend.
+CSGXAudioEngine_playSoundSweepLoop:
+  push bc
+  push hl
+  ld de, 1
+  call 949
+  pop hl
+  inc hl              ; inc pitch
+  pop bc
+  djnz CSGXAudioEngine_playSoundSweepLoop
+
+  pop de
+  pop bc
+  pop hl
+  ret
+  
+CSGXAudioEngine_playSoundSweepDown
+  push hl
+  push bc
+  push de
+
+  ld hl, 500           ; starting pitch.
+  ld b, 250            ; length of pitch bend.
+CSGXAudioEngine_playSoundSweepDownLoop:
+  push bc
+  push hl
+  ld de, 1
+  call 949
+  pop hl
+  dec hl               ; dec pitch
+  pop bc
+  djnz CSGXAudioEngine_playSoundSweepDownLoop
+
+  pop de
+  pop bc
+  pop hl
+  ret
+
+
+CSGXAudioEngine_playSoundBang:
+; from https://chuntey.wordpress.com/2013/02/28/how-to-write-zx-spectrum-games-chapter-3/
+noise:
+  ld e,250            ; repeat 250 times.
+  ld hl,0             ; start pointer in ROM.
+noise2:
+  push de
+  ld b,32             ; length of step.
+noise0:
+  push bc
+  ld a,(hl)           ; next "random" number.
+  inc hl              ; pointer.
+  and 248             ; we want a black border.
+  out (254),a         ; write to speaker.
+  ld a,e              ; as e gets smaller...
+  cpl                 ; ...we increase the delay.
+noise1:
+  dec a               ; decrement loop counter.
+  jr nz,noise1        ; delay loop.
+  pop bc
+  djnz noise0         ; next step.
+  pop de
+  ld a,e
+  sub 24              ; size of step.
+  cp 30               ; end of range.
+  ret z
+  ret c
+  ld e,a
+  cpl
+noise3:
+  ld b,40             ; silent period.
+noise4:
+  djnz noise4
+  dec a
+  jr nz,noise3
+  jr noise2
+  ret
+
+
+
+; MIDI definitions taken from https://github.com/MarquisdeGeek/midilib/blob/master/src/midiinfo.h
+; They are in SGX, just not the HTML5 version.
+
+MIDI_NOTE_C			equ 0
+MIDI_NOTE_C_SHARP	equ 1
+MIDI_NOTE_C_FLAT	equ -11
+MIDI_NOTE_D			equ 2
+MIDI_NOTE_D_SHARP	equ 3
+MIDI_NOTE_D_FLAT	equ 1
+MIDI_NOTE_E			equ 4
+MIDI_NOTE_E_SHARP	equ 5
+MIDI_NOTE_E_FLAT	equ 3
+MIDI_NOTE_F			equ 5
+MIDI_NOTE_F_SHARP	equ 6
+MIDI_NOTE_F_FLAT	equ 5
+MIDI_NOTE_G			equ 7
+MIDI_NOTE_G_SHARP	equ 8
+MIDI_NOTE_G_FLAT	equ 6
+MIDI_NOTE_A			equ 9
+MIDI_NOTE_A_SHARP	equ 10
+MIDI_NOTE_A_FLAT	equ 8
+MIDI_NOTE_B			equ 11
+MIDI_NOTE_B_SHARP	equ 12
+MIDI_NOTE_B_FLAT	equ 10
+
+MIDI_NOTE_MIDDLE_C	equ MIDI_NOTE_C5
+
+MIDI_NOTE_C0		equ 0
+MIDI_NOTE_C1		equ 12
+MIDI_NOTE_C2		equ 24
+MIDI_NOTE_C3		equ 36
+MIDI_NOTE_C4		equ 48
+MIDI_NOTE_C5		equ 60
+MIDI_NOTE_C6		equ 72
+MIDI_NOTE_C7		equ 84
+MIDI_NOTE_C8		equ 96
+MIDI_NOTE_C9		equ 108
+MIDI_NOTE_C10		equ 120
+
+MIDI_OCTAVE_0		equ MIDI_NOTE_C0
+MIDI_OCTAVE_1		equ MIDI_NOTE_C1
+MIDI_OCTAVE_2		equ MIDI_NOTE_C2
+MIDI_OCTAVE_3		equ MIDI_NOTE_C3
+MIDI_OCTAVE_4		equ MIDI_NOTE_C4
+MIDI_OCTAVE_5		equ MIDI_NOTE_C5
+MIDI_OCTAVE_6		equ MIDI_NOTE_C6
+MIDI_OCTAVE_7		equ MIDI_NOTE_C7
+MIDI_OCTAVE_8		equ MIDI_NOTE_C8
+MIDI_OCTAVE_9		equ MIDI_NOTE_C9
+MIDI_OCTAVE_10		equ MIDI_NOTE_C10
+
+
+;
+; Note Duration. All are mapped to fractions to fit inside a byte, and work directly on the Spectrum
+;
+MIDI_NOTE_BREVE					equ  1
+MIDI_NOTE_MINIM					equ  2
+MIDI_NOTE_CROCHET				equ  4
+MIDI_NOTE_QUAVER				equ  8
+MIDI_NOTE_SEMIQUAVER			equ 16
+MIDI_NOTE_SEMIDEMIQUAVER		equ 32
+
+;
+; Change from easy numbers to Spectrum numbers
+;
+CSGXAudioEngine_audio_remapper:
+defw	16	,	26785
+defw	17	,	25283
+defw	18	,	23866
+defw	19	,	22528
+defw	20	,	21265
+defw	21	,	20073
+defw	23	,	18948
+defw	24	,	17887
+defw	25	,	16884
+defw	27	,	15938
+defw	29	,	15045
+defw	30	,	14203
+defw	32	,	13407
+defw	34	,	12656
+defw	36	,	11948
+defw	38	,	11279
+defw	41	,	10647
+defw	43	,	10051
+defw	46	,	9489
+defw	49	,	8958
+defw	51	,	8457
+defw	55	,	7984
+defw	58	,	7538
+defw	61	,	7116
+defw	65	,	6718
+defw	69	,	6343
+defw	73	,	5989
+defw	77	,	5654
+defw	82	,	5339
+defw	87	,	5041
+defw	92	,	4759
+defw	98	,	4494
+defw	103	,	4243
+defw	110	,	4007
+defw	116	,	3784
+defw	123	,	3573
+defw	130	,	3374
+defw	138	,	3186
+defw	146	,	3009
+defw	155	,	2842
+defw	164	,	2684
+defw	174	,	2535
+defw	185	,	2394
+defw	196	,	2262
+defw	207	,	2136
+defw	220	,	2018
+defw	233	,	1907
+defw	246	,	1801
+defw	261	,	1702
+defw	277	,	1608
+defw	293	,	1519
+defw	311	,	1436
+defw	329	,	1357
+defw	349	,	1282
+defw	370	,	1212
+defw	392	,	1146
+defw	415	,	1083
+defw	440	,	1024
+defw	466	,	968
+defw	493	,	915
+defw	523	,	866
+defw	554	,	819
+defw	587	,	775
+defw	622	,	733
+defw	659	,	693
+defw	698	,	656
+defw	740	,	621
+defw	784	,	588
+defw	830	,	556
+defw	880	,	527
+defw	932	,	499
+defw	987	,	473
+defw	1046	,	448
+defw	1108	,	424
+defw	1174	,	402
+defw	1244	,	381
+defw	1318	,	361
+defw	1396	,	343
+defw	1480	,	325
+defw	1568	,	309
+defw	1661	,	293
+defw	1760	,	278
+defw	1864	,	264
+defw	1975	,	251
+defw	2093	,	239

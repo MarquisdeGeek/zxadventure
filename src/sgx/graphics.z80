@@ -1,0 +1,643 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+
+;
+; *** SGX Graphics ***
+;
+
+; Constants
+
+SCREEN_PIXEL_DATA	    equ    04000h
+SCREEN_PIXEL_SIZE	    equ    01800h
+SCREEN_ATTR_DATA        equ    05800h
+SCREEN_ATTR_SIZE        equ    00300h
+
+; Color set
+sgxColorRGBA_BLACK      equ 0
+sgxColorRGBA_BLUE       equ 1
+sgxColorRGBA_RED        equ 2
+sgxColorRGBA_MAGENTA    equ 3
+sgxColorRGBA_GREEN      equ 4
+sgxColorRGBA_CYAN       equ 5
+sgxColorRGBA_YELLOW     equ 6
+sgxColorRGBA_WHITE      equ 7
+
+
+; State
+GFX_CURRENT_INK         defb 0
+GFX_CURRENT_PAPER       defb 0
+GFX_CURRENT_BORDER      defb 0
+GFX_CURRENT_FLASH       defb 0
+GFX_CURRENT_BRIGHT      defb 0
+
+GFX_CURRENT_FONT_INK    defb 0
+GFX_CURRENT_FONT_PAPER  defb 0
+GFX_CURRENT_FONT_FLASH  defb 0
+GFX_CURRENT_FONT_BRIGHT defb 0
+GFX_CURRENT_FONT_ATTR   defb 0 ; pre-computed form of ink/paper/flash/bright : F B PPP III
+
+
+
+CSGXGraphicsEngine_create:
+  
+  ; https://chuntey.wordpress.com/2010/03/22/sprite-graphics-tutorial/
+  ; Generate a table to speed the sprite render code
+  LD DE,16384
+  LD HL,SCRADTAB
+  LD B,192
+
+GENTABLINELOOP:
+  LD (HL),E
+  INC H
+  LD (HL),D
+  DEC H
+  INC L
+
+  INC D
+  LD A,D
+  AND 7
+  JR NZ,NEXTLINE
+  LD A,E
+  ADD A,32
+  LD E,A
+  JR C,NEXTLINE
+  LD A,D
+  SUB 8
+  LD D,A
+
+NEXTLINE:
+  DJNZ GENTABLINELOOP
+
+  RET
+
+
+;
+; Draw Surface
+;
+; IN : HL = address of image
+sgxDrawSurface_drawImage:
+  ld de, SCREEN_PIXEL_DATA
+  ld bc, SCREEN_PIXEL_SIZE + SCREEN_ATTR_SIZE
+  ldir
+  ret
+
+sgxDrawSurface_clear:
+  ; Write 0 to all pixels
+  ld hl, SCREEN_PIXEL_DATA
+  ld (hl),0
+  ld de, SCREEN_PIXEL_DATA+1
+  ld bc, SCREEN_PIXEL_SIZE-1
+  ldir
+  
+  ; Write white paper to all attributes
+  ld hl, SCREEN_ATTR_DATA
+  ld (hl), sgxColorRGBA_WHITE
+  ld de, SCREEN_ATTR_DATA+1
+  ld bc, SCREEN_ATTR_SIZE-1
+  ldir
+  
+  ret
+
+;
+; For font rendering
+;
+sgxDrawSurface_setFontInkColor:
+  ; Ensure it's valid, as colours can only be 0-7
+  and 7
+  ld (GFX_CURRENT_FONT_INK), a
+
+  ld a, (GFX_CURRENT_FONT_ATTR)
+  and %11111000
+  
+  ld hl, GFX_CURRENT_FONT_INK
+  add a, (hl)
+
+  ld (GFX_CURRENT_FONT_ATTR), a
+  ret
+
+sgxDrawSurface_setFontPaperColor:
+  ; Ensure it's valid, as colours can only be 0-7
+  and 7
+  ld (GFX_CURRENT_FONT_PAPER), a
+  ld b, a   ; b is our pre-shifted paper colour in position
+
+  ; Shift the paper into position
+  sla b
+  sla b
+  sla b
+
+  ld  hl, GFX_CURRENT_FONT_ATTR
+  ld  a, (hl)
+  and %11000111
+  add a, b
+
+  ld (hl), a
+
+  ret
+
+
+sgxDrawSurface_setFontFlash:
+  ld (GFX_CURRENT_FONT_FLASH), a
+  ld hl, GFX_CURRENT_FONT_ATTR
+  or a
+  jr z, sgxDrawSurface_setFontFlashOff
+  
+  ; Set on
+  ld a, %10000000
+  or (hl)
+  ld (hl), a
+  ret
+
+sgxDrawSurface_setFontFlashOff:
+  ld  a, %01111111
+  and (hl)
+  ld  (hl), a
+  ret
+
+
+
+sgxDrawSurface_setFontBright:
+  ld (GFX_CURRENT_FONT_BRIGHT), a
+  ld hl, GFX_CURRENT_FONT_ATTR
+  or a
+  jr z, sgxDrawSurface_setFontBrightOff
+  
+  ; Set on
+  ld a, %01000000
+  or (hl)
+  ld (hl), a
+  ret
+
+sgxDrawSurface_setFontBrightOff:
+  ld  a, %10111111
+  and (hl)
+  ld  (hl), a
+  ret
+
+
+; IN : HL = offset. Usually 0 or SCREEN_ATTR_DATA
+; OUT : HL = address of pixel X,Y from a block
+; OUT : A, BC = corrupt
+sgxDrawSurface_getAttributeOffset:
+  ld b, (ix+DATA_OFFSET_XPOS)
+  ld c, (ix+DATA_OFFSET_YPOS)
+  ; fall through to sgxDrawSurface_getAttributeOffsetAt
+
+; IN : HL = offset. Usually 0 or SCREEN_ATTR_DATA
+; IN : BC = screen co-ordinates (B = X, C = Y)
+; OUT : HL = address of pixel X,Y from a block
+; OUT : A, BC = corrupt
+sgxDrawSurface_getAttributeOffsetAt:
+
+  ; attribute byte is at  SCREEN_ATTR_DATA + x/8 + |y/8|*32
+
+  ; Get the X co-ordinate
+  ; x/8 (>>3)
+  push bc
+  ld  c, b
+  ld  b, 0
+  srl c
+  srl c
+  srl c
+  add hl, bc
+
+  ; (y>>3)*32 (<<5) = << 2
+  pop bc
+  ld  a, c
+  and %11111000
+  ld  b, 0
+  ld  c, a
+  sla c
+  rl  b
+  sla c
+  rl  b
+  add hl, bc
+  ret
+
+sgxDrawSurface_setScreenAttribute:
+
+  push af
+  ld hl, SCREEN_ATTR_DATA
+  call sgxDrawSurface_getAttributeOffset
+  pop af
+
+  ld (hl), a
+
+  ret
+
+sgxDrawSurface_setAttribute:
+
+  ld hl, SCREEN_ATTR_DATA
+  call sgxDrawSurface_getAttributeOffset
+
+  ld a, (ix+DATA_OFFSET_ATTR)
+  ld (hl), a
+
+  ret
+
+
+sgxDrawSurface_setBorderColor
+  ld  (GFX_CURRENT_BORDER), a
+  call 8859
+  ret
+
+; sprite helper scratch
+SCRADTAB equ 64000
+SCRADD	 defw 0
+SPRGFX   defw 0
+BITPOS	 defb 0
+ 
+; IN : IX = sprite data object
+sgxDrawSurface_ClearRect
+  ; Get the co-ordinates
+  ld c, (ix+DATA_OFFSET_XPOS)
+  ld b, (ix+DATA_OFFSET_YPOS)
+
+  LD H,SCRADTAB/256	; this next section calculates the
+  LD L,B			; screen address using a lookup table
+  LD A,(HL)		; as explained earlier in the tutorial
+  INC H
+  LD H,(HL)
+  LD L,A
+  LD A,C
+  AND 248
+  RRCA
+  RRCA
+  RRCA
+  ADD A,L
+  LD L,A
+
+  LD A,C			; find which pixel position the sprite
+  AND 7			; will be at and store it. We need this to
+  LD (BITPOS),A		; know how many times to shift the sprite data
+
+  LD C,8			; The sprite is 8 lines tall
+
+ds_erase_LINELOOP:
+  LD E, 255		; load the E reg with the first line of
+
+  LD A,(BITPOS)		; Retrieve the pixel position
+  OR A			; Quick way of testing if A is zero - Note: A is unaffected
+  JR Z,ds_erase_SKIPROTATE	; If zero then no shifting is needed
+
+  LD B,A			; loop counter for number of times to
+  ; rotate (shift) sprite data
+  XOR A			; Quick way setting A to zero and
+  ; clearing the Carry Flag. The Carry Flag must be reset
+  ; as the rotate instructions will shift its contents
+  ; into the sprite data.
+
+ds_erase_ROTATELOOP:
+  RR E		; An extra register is needed for the
+  RRA			; shifted sprite data. After the RR E is executed
+  ; rightmost bit of sprite data is shifted out to the Carry Flag.
+  ; It is then shifted into the A reg by RRA. So no data is lost.
+  DJNZ ds_erase_ROTATELOOP	; Loop back until shifting is complete
+
+ds_erase_SKIPROTATE:
+  ; Flip the bits to create a mask
+  cpl
+  LD D,A		; Store in D register, as A will be
+  ; needed for another purpose. E & D regs now contain the
+  ; shifted sprite data.
+  
+  ld a,e
+  cpl
+  ld e,a
+
+ds_erase_nextline:
+  LD A,(HL)		; Actually put a line of the sprite on the screen
+  and e
+  LD (HL),a
+
+  INC L         ; second byte - if it fits in one byte, then this XOR's with D
+  LD A,(HL)
+  and D
+  LD (HL),a
+
+  DEC L			; move back and down one line, on the screen
+  INC H
+
+  LD A,H			; It is not necessary to recalculate
+  AND 7			; the screen address for each line of
+  JR NZ,ds_erase_A1		; the sprite. All that is needed is to
+  LD A,L			; check if a char. or segment boundary
+  ADD A,32		; has been crossed and adjust address
+  LD L,A			; accordingly.
+  JR C,ds_erase_A1
+  LD A,H
+  SUB 8
+  LD H,A
+
+ds_erase_A1:
+
+  DEC C
+  JP NZ,ds_erase_nextline	; loop back until all lines are drawn.
+
+  ret
+
+; IN : IX = sprite data object
+sgxDrawSurface_LevelFillRect:
+  ; https://chuntey.wordpress.com/2010/03/22/sprite-graphics-tutorial/
+
+  ;DI			;Disable Interupts. Not strictly necessary in this
+  ;example as we are not redirecting the Stack.
+
+  ; Only draw this if we're on the right level
+  ld a,(LEVEL_INDEX)
+  cp (ix+DATA_OFFSET_LEVEL)
+  ret nz
+
+sgxDrawSurface_FillRect:
+  ; Get the co-ordinates
+  ld c,(ix+DATA_OFFSET_XPOS)
+  ld b,(ix+DATA_OFFSET_YPOS)
+
+  LD H,SCRADTAB/256	; this next section calculates the
+  LD L,B			; screen address using a lookup table
+  LD A,(HL)		; as explained earlier in the tutorial
+  INC H
+  LD H,(HL)
+  LD L,A
+  LD A,C
+  AND 248
+  RRCA
+  RRCA
+  RRCA
+  ADD A,L
+  LD L,A
+  LD (SCRADD),HL	; store screen address for later
+  ; as HL is needed again
+
+  LD A,C			; find which pixel position the sprite
+  AND 7			; will be at and store it. We need this to
+  LD (BITPOS),A		; know how many times to shift the sprite data
+
+  ; Compute the position of the graphics
+  ld hl, DATA_GRAPHICS_SPRITES
+
+  ld a, (ix+DATA_OFFSET_IMAGE)
+  add a, (ix+DATA_OFFSET_FRAME)
+  ld e,a
+
+  ld d,0
+  sla e
+  rl d
+  sla e
+  rl d
+  sla e
+  rl d
+  add hl,de
+
+  LD C,8			; The sprite is 8 lines tall
+
+LINELOOP:
+  LD E,(HL)		; load the E reg with the first line of
+  INC HL			; sprite data, and move forward
+
+  PUSH HL		; preserve this address for later
+
+  LD A,(BITPOS)		; Retrieve the pixel position
+  OR A			; Quick way of testing if A is zero - Note: A is unaffected
+  JR Z,SKIPROTATE	; If zero then no shifting is needed
+
+  LD B,A			; loop counter for number of times to
+  ; rotate (shift) sprite data
+  XOR A			; Quick way setting A to zero and
+  ; clearing the Carry Flag. The Carry Flag must be reset
+  ; as the rotate instructions will shift its contents
+  ; into the sprite data.
+
+ROTATELOOP:
+  RR E		; An extra register is needed for the
+  RRA			; shifted sprite data. After the RR E is executed
+  ; rightmost bit of sprite data is shifted out to the Carry Flag.
+  ; It is then shifted into the A reg by RRA. So no data is lost.
+  DJNZ ROTATELOOP	; Loop back until shifting is complete
+
+SKIPROTATE:
+  LD D,A		; Store in D register, as A will be
+  ; needed for another purpose. E & D regs now contain the
+  ; shifted sprite data.
+
+  LD HL,(SCRADD)	; Get back the screen address
+
+  LD A,(HL)		; Actually put a line of the sprite on the screen
+  XOR E
+  LD (HL),A
+
+  INC L         ; second byte - if it fits in one byte, then this XOR's with D
+  LD A,(HL)
+  XOR D
+  LD (HL),A
+
+  DEC L			; move back and down one line, on the screen
+  INC H
+
+  LD A,H			; It is not necessary to recalculate
+  AND 7			; the screen address for each line of
+  JR NZ,A1		; the sprite. All that is needed is to
+  LD A,L			; check if a char. or segment boundary
+  ADD A,32		; has been crossed and adjust address
+  LD L,A			; accordingly.
+  JR C,A1
+  LD A,H
+  SUB 8
+  LD H,A
+
+A1:
+  LD (SCRADD),HL	; store it again
+
+  POP HL		; retrieve the address of the next line
+  ; of sprite data
+  DEC C		
+  JP NZ,LINELOOP	; loop back until all lines are drawn.
+
+  call sgxDrawSurface_setAttribute     ; on return, hl still holds the attr location. a holds the attr byte
+  
+  ; Set adjacent attr if it extends over two squares
+  ld b, a
+  ld a,(ix+DATA_OFFSET_XPOS)
+  and 7
+  jr z, xpos_is_aligned
+
+  inc hl
+  ld (hl), b
+  dec hl
+
+xpos_is_aligned:
+  ld a,(ix+DATA_OFFSET_YPOS)
+  and 7
+  jr z, ypos_is_aligned
+  ld de, 32
+  add hl,de
+  ld (hl), b
+
+ypos_is_aligned:
+
+  ;EI			; Enable Interupts again
+  RET
+
+
+; bc = length
+; hl = xy positions   (in text co-ords)
+sgxDrawSurface_fillAttributes:
+
+  push bc
+
+  ; Fix x position to be a pixel row (0-255), rather than a text col (0-31)
+  sla h ; *2
+  sla h ; *4
+  sla h ; *8
+  ld  b, h
+
+  ; Fix y position to be a pixel row (0-191), rather than a text row (0-23)
+  sla l ; *2
+  sla l ; *4
+  sla l ; *8
+  ld  c, l
+
+  ld hl, SCREEN_ATTR_DATA
+  call sgxDrawSurface_getAttributeOffsetAt
+
+  pop bc    ; length
+  ld b, c
+
+  ld a, (GFX_CURRENT_FONT_ATTR)
+
+attrlo:
+  ld (hl), a
+  inc hl
+  djnz attrlo
+
+  ret
+  
+
+; IN: DE = number to print
+; IN: HL = co-ordinates (h=x, l=y) to print, in text map co-ords (0-31,0-23)
+sgxDrawSurface_drawNumber:
+
+  push ix
+  push iy
+  call CSGXCoreEngine_restoreIXY
+
+  push hl
+  ld bc, gfx_drawTextScratchEnd
+
+  dec bc
+  dec bc ; the terminator, already NULL
+
+  push de
+
+  ld  a,22
+  rst 16          ; print it.
+  ld  a,l  ; Y
+  rst 16          ; print it.
+  ld  a,h ; X
+  rst 16          ; print it.
+
+  pop de
+
+  ld b, d
+  ld c, e
+  call 11563 ; stack number in bc.
+  push bc
+  call 11747 ; print
+ 
+  pop de
+  call sgxStrlen ; bc now equals length
+
+  pop hl    ; xy position
+  ld bc, 24
+  call sgxDrawSurface_fillAttributes       ; hl=xy, bc=length
+
+  pop iy
+  pop ix
+  ret
+
+; for   sgxDrawSurface_drawNumber
+gfx_drawTextScratch defb 0,0,0,0,0,0
+gfx_drawTextScratchEnd equ $
+
+
+; IN: DE = address of string
+; IN: HL = co-ordinates (h=x, l=y) to print , in text co-ords space
+sgxDrawSurface_drawText:
+  ; prepare for X,y
+  push ix
+  push iy
+
+  call CSGXCoreEngine_restoreIXY
+
+  push de
+
+  call sgxStrlen
+  push bc
+
+  ld a, 22
+  rst 16          ; print it.
+
+  ld a, l  ; Y
+  rst 16          ; print it.
+
+  ld a, h ; X
+  rst 16          ; print it.
+
+  pop bc
+  pop de
+  push bc   ;length
+  push hl   ; xy position
+  call 8252           ; print our string
+
+  pop hl    ; xy position - still in text grid
+  pop bc    ; length
+  call  sgxDrawSurface_fillAttributes
+
+  pop iy
+  pop ix
+
+  ret
+
+; IN: DE = address of string
+; IN: HL = co-ordinates (h=cx, l=y) to print
+sgxDrawSurface_drawTextCentre:
+
+  ; prepare for X,y
+  push de
+
+  call sgxStrlen
+  push bc
+  
+  ; x = cx-width/2
+  rr c      ; width/2, because we know b=0 as no string can be > 255 length
+  ld b, c
+sgxDrawSurface_drawTextCentre_subLoop:
+  dec h
+  djnz sgxDrawSurface_drawTextCentre_subLoop
+
+  ld  a, 22
+  rst 16          ; print it.
+
+  ld  a, l  ; Y
+  rst 16          ; print it.
+
+  ld  a, h ; X
+  rst 16          ; print it.
+
+  pop bc
+  pop de
+  push hl
+  push bc
+  call 8252           ; print our string
+
+  pop bc    ; length
+  pop hl    ; xy position
+  call  sgxDrawSurface_fillAttributes
+
+  ret

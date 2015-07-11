@@ -1,0 +1,146 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+
+game_start
+  call sgxDrawSurface_clear
+
+  ld a, sgxColorRGBA_WHITE
+  call sgxDrawSurface_setBorderColor
+
+  call map_draw_screen
+  call map_draw_objects
+  call player_draw_hud
+  
+
+game_loop:
+  ; Step 1. Player movement
+  ld ix, DATA_PLAYER
+
+game_loop_check_keys_xaxis:
+  ld   a, SGX_KEY_Z
+  call CSGXInputManager_isKeyboardKeyPressed
+  jp   z, player_move_left
+
+  ld   a, SGX_KEY_X
+  call CSGXInputManager_isKeyboardKeyPressed
+  jp   z, player_move_right
+
+game_loop_check_keys_yaxis:
+  ld   a, SGX_KEY_M
+  call CSGXInputManager_isKeyboardKeyPressed
+  jp   z, player_move_down
+
+  ld   a, SGX_KEY_K
+  call CSGXInputManager_isKeyboardKeyPressed
+  jp   z, player_move_up
+  jp game_loop_check_collisions
+
+  ; end of keyboard checks
+
+game_loop_check_collisions:
+
+  ; Has the player picked up any object?
+  ld ix, DATA_PLAYER
+  ld iy, DATA_PLAYER  + GAME_OBJECT_SIZE
+
+  ld b, GAME_OBJECT_COUNT-1
+
+game_loop_check_object_loop:
+  push bc  ; store the loop count
+
+  call player_check_collision_with_object
+  or a
+  jr z, game_loop_check_object_next
+
+  ld l, (iy+DATA_OFFSET_COLLISION+0)   ; these are loaded in the opposite order to what you might expect
+  ld h, (iy+DATA_OFFSET_COLLISION+1)
+  push hl
+  pop ix
+
+  jp (ix)  ; eval the collision method. jp back to game_loop_check_object_next
+
+
+game_loop_check_object_next:
+  ld b, 0
+  ld c, GAME_OBJECT_SIZE
+  add iy, bc
+  pop bc
+  djnz  game_loop_check_object_loop
+
+
+game_loop_level_updates:
+
+  ld ix, DATA_DRAGON1
+  call dragon_move
+
+  ld ix, DATA_DRAGON2
+  call dragon_move
+
+  ; restore IY to stop bad magic, crashes et al
+  call CSGXCoreEngine_restoreIY
+
+  ld hl, GAME_PLAYER_DEAD
+  ld a, (hl)
+  or a
+  jp nz, game_over_lose
+
+  ld hl, GAME_PLAYER_WON
+  ld a, (hl)
+  or a
+  jp nz, game_over_win
+
+  ld hl, GAME_AIR_LEFT
+  ld e, (hl)
+  inc hl
+  ld d, (hl)
+  dec de
+  ld (hl), d
+  dec hl
+  ld (hl), e
+
+  ; When the air's LSB rolls to zero, we update the screen...
+  xor a
+  cp e
+  push de
+  call z, player_draw_airleft
+  pop de
+
+  ; When the air's MSB hits zero, you die.
+  xor a
+  cp d
+  jp z,game_over_lose
+
+gl_timer_not_flipped:
+
+  ; TODO: Replace with better frame rate lock
+  halt
+  jp game_loop
+
+
+
+game_add_score:
+  ld hl, GAME_SCORE
+  ld b, (hl)
+  add a,b
+  ld  (hl), a
+  ret
+
+; IN: de = ptr to object to check
+; OUT: nz = no, z=yes
+player_own_item:
+  ld a, (DATA_PLAYER+DATA_OFFSET_USER+0)
+  cp d
+  ret nz
+
+  ld a, (DATA_PLAYER+DATA_OFFSET_USER+1)
+  cp e
+  ret
+
+; temporary holding place for a ptr to the collided object
+GL_COLLISION_OFFSET defw 0

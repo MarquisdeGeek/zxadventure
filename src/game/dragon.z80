@@ -1,0 +1,130 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+
+DRAGON_ALIVE          equ DATA_OFFSET_USER1
+DRAGON_DIRECTION      equ DATA_OFFSET_USER2
+DRAGON_DISTANCE_LEFT  equ DATA_OFFSET_USER3
+
+dragon_move:
+  ; Check to see if it's dead first
+  xor a
+  cp (ix+DATA_OFFSET_USER)  ; 1=alive, 0=dead
+  ret z
+
+  call sgxDrawSurface_LevelFillRect
+
+  ld a,(ix+DRAGON_DISTANCE_LEFT)
+  or a
+  jr nz, dragon_move_not_at_extent
+
+  ld a, 56                        ; how far to move
+  ld (ix+DRAGON_DISTANCE_LEFT), a
+
+  ; direction in which to move
+  ld a, (ix+DRAGON_DIRECTION)
+  xor 1
+  ld (ix+DRAGON_DIRECTION), a
+
+dragon_move_not_at_extent:   ; so continue to move in the current direction
+  ; Prepare the positions
+  ld b, (ix+DATA_OFFSET_XPOS)
+  ld c, (ix+DATA_OFFSET_YPOS)
+
+  ; Determine the new co-ords
+  ld a, (ix+DRAGON_DIRECTION)
+  cp DRAGON_MOVE_LEFT
+  jr nz, dragon_move_not_left
+
+  ; left
+  dec b
+  jr  dragon_move_update_position
+
+dragon_move_not_left:
+  cp DRAGON_MOVE_RIGHT
+  jr nz, dragon_move_not_right
+
+  ;right
+  inc b
+  jr  dragon_move_update_position
+
+dragon_move_not_right:
+  cp DRAGON_MOVE_UP
+  jr nz, dragon_move_not_up
+
+  ;up
+  dec c
+  jr  dragon_move_update_position
+
+dragon_move_not_up:
+  cp DRAGON_MOVE_DOWN
+  jr nz, dragon_move_update_position ; assertion
+
+  ;down
+  inc c
+
+dragon_move_update_position:
+  ld (ix+DATA_OFFSET_XPOS), b
+  ld (ix+DATA_OFFSET_YPOS), c
+
+  ld a,(ix+DRAGON_DISTANCE_LEFT)
+  dec a
+  ld (ix+DRAGON_DISTANCE_LEFT),a
+
+  call sgxDrawSurface_LevelFillRect
+
+  ret
+  
+
+collision_fight_dragon:
+  ; if dragon is already dead, return
+  xor a
+  cp (iy+DATA_OFFSET_USER)  ; 1=alive, 0=dead
+  jp z, game_loop_check_object_next
+
+  ; if player has sword, kill dragon
+  ld ix,DATA_PLAYER
+  ld de, DATA_SWORD
+  ld a,(ix+DATA_OFFSET_USER+0)
+  cp d
+  jr nz,collision_fight_dragon_nosword
+
+  ld a,(ix+DATA_OFFSET_USER+1)
+  cp e
+  jr nz,collision_fight_dragon_nosword
+
+  ; The player kills the dragon
+  ld a,10
+  call game_add_score
+  call player_draw_hud
+
+  xor a
+  ld (iy+DATA_OFFSET_USER),a
+  
+  ; Undraw the dragon
+  push ix
+  push iy
+  pop ix
+  call sgxDrawSurface_LevelFillRect
+
+  ld a, DATA_GRAPHIC_DRAGON_DEAD
+  ld (iy+DATA_OFFSET_IMAGE), a
+
+  ; ix is still holding the dragon ptr
+  call sgxDrawSurface_LevelFillRect
+  pop ix ; cleans the stack, although we're never likely use it
+
+  call CSGXAudioEngine_playSoundBang                           
+  jp game_loop_check_object_next
+
+collision_fight_dragon_nosword:
+  ld a,1
+  ld hl,GAME_PLAYER_DEAD
+  ld (hl),a
+  jp game_loop_check_object_next
+

@@ -1,0 +1,248 @@
+;
+; ZX Adventure by Marquis de Geek - @MarquisdeGeek
+; Based heavily on Atari Adventure by Warren Robinett
+;
+; Version 1.0 - Initial release
+; Release under the GPL, version3. See LICENSE file for details
+;
+
+init_level:
+  ld ix,DATA_PLAYER                ; defensive. It _should_ only get called when player is the focus
+  ld (ix+DATA_OFFSET_LEVEL), a
+  ld (LEVEL_INDEX), a
+
+  call map_compute_level_offset_in_hl
+  ld (LEVEL_LOCATION), hl
+  ret
+
+
+
+; IN : B = X co-ord, C = y co-ord, A = new tile index
+; TODO: is bc = x,y, or an offset???
+map_change_tile_at_offset:
+  ld hl, (LEVEL_LOCATION)
+
+  add hl, bc
+  ld bc, 5   ; skip metadata block
+  add hl, bc
+
+  ;call sgxDrawSurface_getAttributeOffset
+  ld (hl), a
+  ret
+
+; IN : B = X co-ord, C = y co-ord
+map_get_tile:
+  ld hl,(LEVEL_LOCATION)
+  
+  add hl, bc
+  ld bc, 5   ; skip metadata block
+  add hl, bc
+
+  ;call sgxDrawSurface_getAttributeOffset
+  ld a, (hl)
+  ret
+
+; IN : B = X co-ord, C = y co-ord
+; TODO
+map_draw_tile:
+
+  push iy
+  pop ix
+
+  call sgxDrawSurface_ClearRect
+
+  ld a, 1
+  ld (ix+DATA_OFFSET_IMAGE), a
+  call sgxDrawSurface_LevelFillRect
+  
+  ret
+
+; workspace for map render code
+dsx       defb 20
+dsy       defb 10
+
+
+
+
+; IN : bc offset from the player to check
+; OUT : nz = collision
+;        z = no collision
+check_map_collision_horizontal:
+
+  ; Check for a wall in the level data
+  ld hl, (LEVEL_LOCATION)
+  add hl, bc
+  ld bc,5   ; skip metadata block
+  add hl, bc
+  
+  call sgxDrawSurface_getAttributeOffset
+
+  ld a, (hl)
+  or a
+  ret nz   ; we collide
+  
+  ; Now check the bottom of the tile
+  ; (if the tile lines up exactly on the top, it's the same tile and we don't need to
+  ; check the tile beneath)
+  ld a, (ix+DATA_OFFSET_YPOS)
+  and %111
+  ret z
+
+  ld bc, 32
+  add hl, bc
+  ld a, (hl)
+  or a
+  ret
+
+
+; IN : bc offset from the player to check
+; OUT : nz = collision
+;        z = no collision
+check_map_collision_vertical:
+
+  ; Check for a wall in the level data
+  ld hl,(LEVEL_LOCATION)
+  ; hl += (x>>3) + (y>>3)*32  + 5 (metadata)
+  ; then,
+  ; hl += -32 (to look at the tile above)
+  ;
+  add hl, bc
+  ld  bc, 5
+  add hl, bc
+
+  call sgxDrawSurface_getAttributeOffset
+
+  ld a, (hl)
+  or a
+  ret nz  ; the bottom left collides
+  
+  ; Now check the bottom right of the character
+  ; (if the tile lines up exactly on the left, it's the same tile and we don't need to
+  ; check the tile beneath)
+  ld a,(ix+DATA_OFFSET_XPOS)
+  and %111
+  ret z        ; perfectly aligned, no need to check
+  
+  inc hl       ; look to the tile on the right
+  ld a, (hl)
+  or a
+  ret
+
+
+
+
+map_compute_level_offset_in_hl:
+
+  ; each screen has 5 bytes of meta data and 32x12=384 tiles.
+  ; Total of 389 bytes per level
+  ld hl, SCREEN_DATA-389
+  ld de, 389
+  inc a
+  ld b, a
+compute_level_offset_loop:
+  add hl, de
+  djnz    compute_level_offset_loop
+  ret
+
+
+map_draw_objects:
+  
+  ld b,  GAME_OBJECT_COUNT
+  ld ix, DATA_GAME_OBJECTS
+map_draw_objects_loop:
+  push bc
+  xor a
+  cp (IX+DATA_OFFSET_IMAGE)
+  call nz, sgxDrawSurface_LevelFillRect
+  ld b, 0
+  ld c, GAME_OBJECT_SIZE
+  add ix, bc
+  pop bc
+  djnz  map_draw_objects_loop
+
+xdraw_objects_player_has_no_object:
+
+  ret
+
+
+map_draw_screen:
+
+  ld hl, DATA_GRAPHICS_UDGS
+  ld (23675), hl  ; set up UDG system variable.
+  ld a, 2         ; 2 = upper screen. 1=lower screen (bottom 2 lines, for BASIC input), 3=printer
+  call 5633       ; open channel, as described in a
+  
+  ld hl, (LEVEL_LOCATION)
+
+  ld d, h
+  ld e, l
+
+  ; Skip over the level meta data
+  inc de
+  inc de
+  inc de
+  inc de
+
+  ld a,16
+  rst 16
+  ld a, (de)
+  rst 16
+
+  inc de
+
+  ; Prepare the tile position at 0,0
+  xor a
+  ld (dsx), a
+  ld (dsy), a
+
+  ld b, 32
+  ld c, 12
+  ;
+  ld hl, $0000   ;h=X, l=Y
+
+draw_yline:
+  push bc
+  push de
+
+  ld a, (de)
+  or a
+  jp z,dont_draw
+
+
+  ld  a, 22 ; prepare for X,y
+  rst 16          ; print it.
+  ld  a, (dsy)   ; vertical position.
+  rst 16          ; print it.
+  ld  a, (dsx)   ; y coordinate.
+  rst 16          ; print it.
+
+  ; determine the UDG to render
+  ld  a,(de)
+  add a, 144
+  rst 16          ; print it.
+
+dont_draw:
+  pop de
+  inc de
+
+  ld  a, (dsx)
+  inc a
+  ld (dsx), a
+
+next_position:
+
+  pop bc
+  djnz draw_yline
+  ld b, 32
+
+  ; end of line
+  xor a
+  ld (dsx), a
+  ld a, (dsy)
+  inc a
+  ld (dsy), a
+
+  dec c
+  jp nz, draw_yline
+
+  ret
